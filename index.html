@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Le Défi des Mots Cachés (4e Année)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <!-- Babel Standalone pour JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- html2canvas pour l'exportation PNG HD -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=Fredoka:wght@500;600;700&display=swap');
+        
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #f1f5f9;
+            color: #0f172a;
+        }
+
+        .font-fredoka {
+            font-family: 'Fredoka', cursive, sans-serif;
+        }
+
+        /* Personnalisation de la barre de défilement */
+        ::-webkit-scrollbar { width: 12px; height: 12px; }
+        ::-webkit-scrollbar-track { background: #e2e8f0; }
+        ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 6px; border: 3px solid #e2e8f0; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-100 text-slate-900 pb-32 overflow-y-auto scroll-smooth">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // Grille 15x15 générée dynamiquement avec placements complexes (Diagonales, Horizontales, Verticales)
+        const initialGrid = (() => {
+            const grid = Array.from({ length: 15 }, () => Array(15).fill(null));
+            const placements = [
+                { w: "AUBE", r: 4, c: 11, dr: 1, dc: 0 },
+                { w: "AUTOMOBILE", r: 0, c: 0, dr: 1, dc: 1 }, // Diagonale
+                { w: "AUTRE", r: 8, c: 1, dr: 1, dc: 1 }, // Diagonale
+                { w: "COTE", r: 2, c: 13, dr: 1, dc: 0 },
+                { w: "DOLLAR", r: 8, c: 13, dr: 1, dc: 0 },
+                { w: "EMOTION", r: 2, c: 0, dr: 1, dc: 1 }, // Diagonale
+                { w: "EPAULE", r: 3, c: 4, dr: 0, dc: 1 },
+                { w: "HORIZON", r: 0, c: 6, dr: 0, dc: 1 },
+                { w: "HORREUR", r: 6, c: 12, dr: 1, dc: 0 },
+                { w: "KILOMETRE", r: 0, c: 13, dr: 1, dc: -1 }, // Diagonale inversée (bas-gauche)
+                { w: "NOMMER", r: 5, c: 0, dr: 1, dc: 0 },
+                { w: "NUMERO", r: 13, c: 1, dr: 0, dc: 1 },
+                { w: "ODEUR", r: 11, c: 7, dr: 0, dc: 1 },
+                { w: "OPERATION", r: 6, c: 0, dr: 1, dc: 1 }, // Diagonale
+                { w: "OSER", r: 2, c: 12, dr: 1, dc: 0 },
+                { w: "PAROLE", r: 1, c: 2, dr: 0, dc: 1 },
+                { w: "PIANO", r: 1, c: 14, dr: 1, dc: 0 },
+                { w: "POSTE", r: 12, c: 7, dr: 0, dc: 1 },
+                { w: "PROBLEME", r: 14, c: 0, dr: 0, dc: 1 },
+                { w: "PROMENADE", r: 6, c: 14, dr: 1, dc: 0 },
+                { w: "REPOSER", r: 2, c: 3, dr: 0, dc: 1 },
+                { w: "ROLE", r: 4, c: 1, dr: 1, dc: 1 }, // Diagonale
+                { w: "ROYAUME", r: 10, c: 5, dr: 0, dc: 1 },
+                { w: "SAUTER", r: 9, c: 5, dr: 0, dc: 1 },
+                { w: "TOT", r: 12, c: 1, dr: 0, dc: 1 }
+            ];
+            
+            placements.forEach(({ w, r, c, dr, dc }) => {
+                for (let i = 0; i < w.length; i++) {
+                    grid[r + i * dr][c + i * dc] = w[i];
+                }
+            });
+            return grid;
+        })();
+
+        const wordsList = [
+            "AUBE", "AUTOMOBILE", "AUTRE", "COTE", "DOLLAR", 
+            "EMOTION", "EPAULE", "HORIZON", "HORREUR", "KILOMETRE", 
+            "NOMMER", "NUMERO", "ODEUR", "OPERATION", "OSER", 
+            "PAROLE", "PIANO", "POSTE", "PROBLEME", "PROMENADE", 
+            "REPOSER", "ROLE", "ROYAUME", "SAUTER", "TOT"
+        ].sort();
+
+        const MYSTERY_SENTENCE_LETTERS = "BRAVODANSLAVIETESEFFORTSSERONTRECOMPENSES"; // 41 lettres
+        const NOISE_LETTERS = "XZKYWQJFPVBMGCDHSNRALTQXZKYWQJFPVBMGCDHSN"; // Lettres pièges additionnelles
+        const FILL_STRING = MYSTERY_SENTENCE_LETTERS + NOISE_LETTERS; // Remplit toutes les cases vides dynamiquement
+
+        const mysteryLayout = [
+            { type: 'word', length: 5 }, // BRAVO
+            { type: 'space' },
+            { type: 'punctuation', char: '!' },
+            { type: 'space' },
+            { type: 'word', length: 4 }, // DANS
+            { type: 'space' },
+            { type: 'word', length: 2 }, // LA
+            { type: 'space' },
+            { type: 'word', length: 3 }, // VIE
+            { type: 'punctuation', char: ',' },
+            { type: 'space' },
+            { type: 'word', length: 3 }, // TES
+            { type: 'space' },
+            { type: 'word', length: 7 }, // EFFORTS
+            { type: 'space' },
+            { type: 'word', length: 6 }, // SERONT
+            { type: 'space' },
+            { type: 'word', length: 11 }, // RECOMPENSES
+            { type: 'punctuation', char: '!' }
+        ];
+
+        function App() {
+            const [tab, setTab] = useState(1);
+            
+            // États du Jeu
+            const [foundWords, setFoundWords] = useState([]);
+            const [foundCells, setFoundCells] = useState(new Set());
+            const [currentSelection, setCurrentSelection] = useState([]);
+            const [mysteryLettersSelected, setMysteryLettersSelected] = useState([]);
+            const [isExporting, setIsExporting] = useState(false);
+
+            const { grid, mysteryCells } = useMemo(() => {
+                let mIdx = 0;
+                const processedGrid = [];
+                const mysterySet = new Set();
+                
+                for (let r = 0; r < 15; r++) {
+                    const row = [];
+                    for (let c = 0; c < 15; c++) {
+                        if (initialGrid[r][c] === null) {
+                            row.push(FILL_STRING[mIdx]);
+                            mysterySet.add(`${r},${c}`);
+                            mIdx++;
+                        } else {
+                            row.push(initialGrid[r][c]);
+                        }
+                    }
+                    processedGrid.push(row);
+                }
+                return { grid: processedGrid, mysteryCells: mysterySet };
+            }, []);
+
+            const isGameWon = foundWords.length === wordsList.length;
+            const isPhraseFound = mysteryLettersSelected.length === MYSTERY_SENTENCE_LETTERS.length;
+
+            const handleCellClick = (r, c) => {
+                const cellKey = `${r},${c}`;
+
+                if (isGameWon) {
+                    if (foundCells.has(cellKey)) return; // On ignore les cases des mots trouvés
+                    
+                    const alreadySelectedIdx = mysteryLettersSelected.findIndex(item => item.r === r && item.c === c);
+                    if (alreadySelectedIdx !== -1) {
+                        if (alreadySelectedIdx === mysteryLettersSelected.length - 1) {
+                            setMysteryLettersSelected(prev => prev.slice(0, -1));
+                        }
+                        return;
+                    }
+
+                    if (mysteryLettersSelected.length < MYSTERY_SENTENCE_LETTERS.length) {
+                        const expectedChar = MYSTERY_SENTENCE_LETTERS[mysteryLettersSelected.length];
+                        
+                        if (grid[r][c] === expectedChar) {
+                            setMysteryLettersSelected(prev => [...prev, { r, c, letter: grid[r][c] }]);
+                        }
+                    }
+                    return;
+                }
+
+                // SÉCURITÉ STRICTE : Les lettres de la phrase mystère (et les pièges) 
+                // ne peuvent absolument pas être sélectionnées tant que le jeu n'est pas gagné.
+                if (mysteryCells.has(cellKey)) {
+                    setCurrentSelection([]); // On réinitialise la sélection si l'élève clique dessus par erreur
+                    return;
+                }
+
+                // CORRECTION MAJEURE : On NE bloque PLUS les cases déjà trouvées pour permettre les intersections !
+
+                const selectionIndex = currentSelection.findIndex(item => item.r === r && item.c === c);
+                
+                if (selectionIndex !== -1) {
+                    if (selectionIndex === currentSelection.length - 1) {
+                        setCurrentSelection(prev => prev.slice(0, -1)); // Désélection classique
+                    } else {
+                        // Anti-bug : si l'enfant clique au milieu d'une sélection, on repart de cette lettre
+                        setCurrentSelection([{ r, c }]); 
+                    }
+                    return;
+                }
+
+                if (currentSelection.length === 0) {
+                    setCurrentSelection([{ r, c }]);
+                } else if (currentSelection.length === 1) {
+                    const prev = currentSelection[0];
+                    const dx = r - prev.r;
+                    const dy = c - prev.c;
+                    if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 && !(dx === 0 && dy === 0)) {
+                        setCurrentSelection(prevSelection => [...prevSelection, { r, c }]);
+                    } else {
+                        // Anti-bug : l'enfant ne suit pas la ligne, on réinitialise sa sélection au lieu de bloquer
+                        setCurrentSelection([{ r, c }]);
+                    }
+                } else {
+                    const first = currentSelection[0];
+                    const second = currentSelection[1];
+                    const dirX = second.r - first.r;
+                    const dirY = second.c - first.c;
+                    
+                    const last = currentSelection[currentSelection.length - 1];
+                    const dx = r - last.r;
+                    const dy = c - last.c;
+
+                    if (dx === dirX && dy === dirY) {
+                        setCurrentSelection(prevSelection => [...prevSelection, { r, c }]);
+                    } else {
+                        // Anti-bug : l'enfant dévie de la ligne droite, on réinitialise sa sélection
+                        setCurrentSelection([{ r, c }]);
+                    }
+                }
+            };
+
+            useEffect(() => {
+                if (currentSelection.length > 1) {
+                    const wordFormed = currentSelection.map(cell => grid[cell.r][cell.c]).join('');
+                    const wordFormedReversed = wordFormed.split('').reverse().join('');
+
+                    const matchedWord = wordsList.find(w => w === wordFormed || w === wordFormedReversed);
+
+                    if (matchedWord && !foundWords.includes(matchedWord)) {
+                        setFoundWords(prev => [...prev, matchedWord]);
+                        const newFoundCells = new Set(foundCells);
+                        currentSelection.forEach(cell => newFoundCells.add(`${cell.r},${cell.c}`));
+                        setFoundCells(newFoundCells);
+                        setCurrentSelection([]);
+                    }
+                }
+            }, [currentSelection, foundWords, foundCells, grid]);
+
+            const handleDownloadPNG = async (elementId, filename) => {
+                if (!window.html2canvas) return;
+                setIsExporting(true);
+                try {
+                    const element = document.getElementById(elementId);
+                    const canvas = await window.html2canvas(element, {
+                        scale: 2,
+                        useCORS: true,
+                        backgroundColor: '#ffffff'
+                    });
+                    const image = canvas.toDataURL("image/png");
+                    const link = document.createElement('a');
+                    link.href = image;
+                    link.download = filename;
+                    link.click();
+                } catch (error) {
+                    console.error("Erreur lors de l'exportation PNG", error);
+                } finally {
+                    setIsExporting(false);
+                }
+            };
+
+            const renderHeader = (title) => (
+                <div className="flex justify-between items-start border-b-4 border-slate-900 pb-4 mb-6">
+                    <div className="flex gap-4 items-center">
+                        <div className="w-14 h-14 bg-amber-100 border-2 border-slate-900 rounded-2xl flex items-center justify-center shadow-sm shrink-0">
+                            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#0f172a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12 2v3m0 16c-4.418 0-8-1.567-8-3.5S7.582 14 12 14s8 1.567 8 3.5S16.418 21 12 21zM12 14c-4.418 0-8-1.567-8-3.5S7.582 7 12 7s8 1.567 8 3.5S16.418 14 12 14z" />
+                                <path d="M8 11h.01M16 11h.01M12 16h.01" />
+                            </svg>
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <span className="bg-amber-400 text-slate-950 text-xs font-black uppercase px-2 py-0.5 rounded-md">4e Année</span>
+                                <span className="text-slate-500 text-xs font-bold uppercase tracking-wider">Vocabulaire & Logique</span>
+                            </div>
+                            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 mt-0.5 uppercase tracking-tight font-fredoka">{title}</h1>
+                        </div>
+                    </div>
+                    <div className="flex flex-col gap-2 text-sm font-semibold text-slate-700 font-mono">
+                        <div className="flex items-end gap-1.5">Prénom : <div className="border-b-2 border-slate-400 w-36"></div></div>
+                        <div className="flex items-end gap-1.5">Date : <div className="border-b-2 border-slate-400 w-40"></div></div>
+                    </div>
+                </div>
+            );
+
+            const renderGrid = () => {
+                return (
+                    <div className="bg-white p-2 border-4 border-slate-900 rounded-2xl inline-block shadow-md mx-auto">
+                        <div className="grid gap-0.5 sm:gap-1" style={{ gridTemplateColumns: `repeat(15, minmax(0, 1fr))` }}>
+                            {grid.map((row, r) => row.map((cell, c) => {
+                                const key = `${r},${c}`;
+                                const isFound = foundCells.has(key);
+                                const isSelected = currentSelection.some(item => item.r === r && item.c === c);
+                                const isMysterySelected = mysteryLettersSelected.some(item => item.r === r && item.c === c);
+
+                                let bgClass = "bg-white hover:bg-slate-100 cursor-pointer text-slate-800 border-slate-200";
+                                
+                                if (isSelected) {
+                                    // isSelected doit être vérifié EN PREMIER pour que la sélection active écrase la couleur "isFound"
+                                    bgClass = "bg-emerald-500 text-white border-emerald-700 font-black shadow-inner scale-105 transform transition-transform";
+                                } else if (isFound) {
+                                    bgClass = "bg-emerald-100 text-emerald-950 border-emerald-300 font-bold opacity-85 cursor-pointer";
+                                } else if (isMysterySelected) {
+                                    bgClass = "bg-orange-500 text-white border-orange-700 font-black shadow-inner scale-105 transform transition-transform";
+                                } else if (isGameWon) {
+                                    bgClass = "bg-orange-50 hover:bg-orange-200 cursor-pointer text-slate-900 border-orange-300 font-bold";
+                                }
+
+                                return (
+                                    <div 
+                                        key={key} 
+                                        onClick={() => handleCellClick(r, c)}
+                                        className={`w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 flex items-center justify-center border-2 text-sm sm:text-base font-bold select-none rounded-md transition-all duration-150 ${bgClass}`}
+                                    >
+                                        {cell}
+                                    </div>
+                                );
+                            }))}
+                        </div>
+                    </div>
+                );
+            };
+
+            return (
+                <div className="max-w-5xl mx-auto px-4 py-6">
+                    {/* Navigation Onglets */}
+                    <div data-html2canvas-ignore="true" className="flex gap-2 mb-4 border-b border-slate-200 pb-2">
+                        <button 
+                            onClick={() => setTab(1)} 
+                            className={`px-5 py-2.5 font-bold rounded-xl transition-all flex items-center gap-2 ${tab === 1 ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-600 hover:bg-slate-200'}`}
+                        >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                            Fiche Élève (Activité)
+                        </button>
+                        <button 
+                            onClick={() => setTab(3)} 
+                            className={`px-5 py-2.5 font-bold rounded-xl transition-all flex items-center gap-2 ${tab === 3 ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-600 hover:bg-slate-200'}`}
+                        >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 14l9-5-9-5-9 5 9 5z"/><path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0112 20.055a11.952 11.952 0 01-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"/></svg>
+                            Fiche Enseignant
+                        </button>
+                    </div>
+
+                    {}
+                    {tab === 1 && (
+                        <div className="flex flex-col items-center">
+                            <div data-html2canvas-ignore="true" className="w-full flex justify-end mb-4">
+                                <button 
+                                    onClick={() => handleDownloadPNG("fiche-activite", "MotMystere_4eAnnee.png")}
+                                    disabled={isExporting}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+                                >
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    {isExporting ? "Génération de l'image..." : "Télécharger l'Activité (PNG)"}
+                                </button>
+                            </div>
+
+                            <div className="w-full overflow-x-auto overflow-y-hidden pb-6">
+                                <div 
+                                    id="fiche-activite" 
+                                    className="bg-white p-8 border-2 border-slate-300 shadow-xl rounded-2xl mx-auto flex flex-col"
+                                    style={{ width: '210mm', minHeight: '297mm', boxSizing: 'border-box' }}
+                                >
+                                    {renderHeader("Le Défi des Mots Cachés")}
+
+                                    {/* Consignes */}
+                                    <div className="bg-amber-50 border-l-4 border-amber-500 p-3.5 mb-5 rounded-r-xl">
+                                        <h3 className="font-bold text-amber-950 mb-0.5 text-sm">Consignes :</h3>
+                                        <ul className="text-amber-900 list-disc list-inside space-y-1 text-xs font-semibold leading-relaxed">
+                                            <li>Trouve les <strong>25 mots</strong> cachés dans la grille (en ligne droite).</li>
+                                            <li>Une fois tous les mots trouvés, la grille se déverrouille pour la <strong>phrase mystère</strong> !</li>
+                                            <li>Lis les lettres restantes (de gauche à droite). Clique sur les <strong>bonnes lettres dans l'ordre</strong> pour former la phrase. <br/><span className="text-amber-700 italic">Attention : à la fin de la grille, certaines lettres sont des pièges et ne seront pas utilisées !</span></li>
+                                        </ul>
+                                    </div>
+
+                                    {/* Grille de jeu */}
+                                    <div className="flex flex-col items-center mb-5">
+                                        {renderGrid()}
+                                    </div>
+
+                                    {/* Liste des Mots */}
+                                    <div className="mb-4">
+                                        <div className="flex justify-between items-center border-b-2 border-slate-200 pb-1.5 mb-2">
+                                            <h3 className="font-black text-base text-slate-800 uppercase tracking-wider font-fredoka">
+                                                Mots à trouver ({foundWords.length} / 25)
+                                            </h3>
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-y-1.5 gap-x-3">
+                                            {wordsList.map(word => {
+                                                const isFound = foundWords.includes(word);
+                                                return (
+                                                    <div key={word} className={`flex items-center gap-1.5 font-mono font-bold text-xs sm:text-sm ${isFound ? 'text-emerald-700 line-through opacity-60' : 'text-slate-700'}`}>
+                                                        <div className={`w-3.5 h-3.5 sm:w-4 sm:h-4 border-2 flex items-center justify-center rounded-sm shrink-0 ${isFound ? 'border-emerald-600 bg-emerald-50 text-emerald-700' : 'border-slate-300'}`}>
+                                                            {isFound && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4"><polyline points="20 6 9 17 4 12"></polyline></svg>}
+                                                        </div>
+                                                        <span className="truncate">{word}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Encadré Réponse Phrase Mystère */}
+                                    <div className={`mt-auto bg-slate-50 border-3 ${isGameWon ? 'border-orange-500 bg-orange-50/50 shadow-md' : 'border-slate-300'} p-4 rounded-2xl transition-all`}>
+                                        <div className="flex items-center justify-center gap-2 mb-1">
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={isGameWon ? "#ea580c" : "#94a3b8"} strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                            <h3 className={`font-black text-lg uppercase tracking-wider font-fredoka ${isGameWon ? 'text-orange-600' : 'text-slate-400'}`}>
+                                                Phrase Mystère
+                                            </h3>
+                                        </div>
+
+                                        {!isPhraseFound ? (
+                                            <p className="text-center text-xs font-semibold mb-3 text-slate-500">
+                                                {isGameWon 
+                                                    ? "La grille est déverrouillée ! Clique sur la prochaine bonne lettre de la phrase ci-dessous."
+                                                    : "Trouve d'abord tous les mots pour débloquer la phrase mystère."
+                                                }
+                                            </p>
+                                        ) : (
+                                            <div className="bg-emerald-100 text-emerald-800 p-2 rounded-lg text-center font-bold text-sm mb-3 border-2 border-emerald-400">
+                                                Félicitations ! Tu as reconstitué le message !
+                                            </div>
+                                        )}
+
+                                        {}
+                                        <div className="flex flex-wrap justify-center gap-x-3 sm:gap-x-4 gap-y-2 sm:gap-y-3">
+                                            {(() => {
+                                                let globalIndex = 0;
+                                                return mysteryLayout.map((item, idx) => {
+                                                    if (item.type === 'space') {
+                                                        return <div key={`space-${idx}`} className="w-1.5 sm:w-3"></div>;
+                                                    } else if (item.type === 'punctuation') {
+                                                        return <div key={`punc-${idx}`} className="flex items-end justify-center text-lg sm:text-xl font-black text-slate-800 pb-0.5">{item.char}</div>;
+                                                    } else if (item.type === 'word') {
+                                                        const letters = [];
+                                                        for(let i = 0; i < item.length; i++) {
+                                                            const charObj = mysteryLettersSelected[globalIndex];
+                                                            letters.push(
+                                                                <div 
+                                                                    key={globalIndex} 
+                                                                    className={`w-5 h-7 sm:w-6 sm:h-8 border-b-[3px] flex items-center justify-center text-base sm:text-xl font-black transition-colors ${charObj ? 'border-orange-600 text-orange-600' : 'border-slate-300 text-transparent'}`}
+                                                                >
+                                                                    {charObj ? charObj.letter : '_'}
+                                                                </div>
+                                                            );
+                                                            globalIndex++;
+                                                        }
+                                                        return <div key={`word-${idx}`} className="flex gap-0.5">{letters}</div>;
+                                                    }
+                                                });
+                                            })()}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {}
+                    {tab === 3 && (
+                        <div className="max-w-4xl mx-auto bg-white p-8 border-2 border-slate-300 shadow-lg rounded-2xl">
+                            <div className="border-b-4 border-indigo-200 pb-4 mb-6">
+                                <span className="bg-indigo-100 text-indigo-800 text-xs font-bold uppercase px-3 py-1 rounded-full">Guide Pédagogique</span>
+                                <h2 className="text-3xl font-black text-indigo-950 mt-1 font-fredoka">Fiche Enseignant & Intégration</h2>
+                            </div>
+                            
+                            <div className="grid md:grid-cols-2 gap-6 mb-8">
+                                <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
+                                    <h3 className="font-bold text-slate-500 uppercase text-xs tracking-wider mb-3">Paramètres de l'Activité</h3>
+                                    <ul className="space-y-2 text-sm text-slate-700">
+                                        <li className="flex justify-between border-b pb-1"><strong>Niveau :</strong> <span>4e année primaire</span></li>
+                                        <li className="flex justify-between border-b pb-1"><strong>Thème :</strong> <span>Vocabulaire Général</span></li>
+                                        <li className="flex justify-between border-b pb-1"><strong>Grille :</strong> <span>15x15 (25 mots)</span></li>
+                                        <li className="flex justify-between border-b pb-1"><strong>Mécanique Phrase :</strong> <span>Mots restants avec pièges</span></li>
+                                    </ul>
+                                </div>
+                                
+                                <div className="bg-indigo-50 p-5 rounded-xl border border-indigo-200 text-indigo-950">
+                                    <h3 className="font-bold text-indigo-700 uppercase text-xs tracking-wider mb-3">Objectifs d'apprentissage</h3>
+                                    <ul className="space-y-2 text-sm">
+                                        <li className="flex items-start gap-2">✓ Épellation et reconnaissance visuelle des mots.</li>
+                                        <li className="flex items-start gap-2">✓ Lecture méthodique (de gauche à droite).</li>
+                                        <li className="flex items-start gap-2">✓ Discrimination visuelle (ignorer les lettres pièges).</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div className="bg-amber-50 p-5 rounded-xl border border-amber-200 mb-6">
+                                <h3 className="font-bold text-amber-900 text-base mb-2">Solution de la Phrase Secrète</h3>
+                                <p className="font-mono text-base font-black text-amber-900 bg-white p-4 rounded-lg border border-amber-300 text-center shadow-sm">
+                                    "Bravo ! Dans la vie, tes efforts seront récompensés !"
+                                </p>
+                            </div>
+
+                            <div className="bg-slate-100 p-4 rounded-lg border border-slate-300 text-sm text-slate-700">
+                                <strong>Note sur la mécanique :</strong> Sur les 70 cases non-utilisées par les mots croisés, seules les 41 premières sont utilisées pour former la phrase (dans le sens naturel de lecture). Les 29 dernières cases de la grille sont remplies de lettres aléatoires formant des "pièges" pour obliger l'élève à s'arrêter au bon endroit !
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
